@@ -1,0 +1,17 @@
+{
+  "settings": {
+    "defaultModel": "claude-sonnet-4-6",
+    "defaultCloneLocation": "C:\\Kavin\\ClaudeCode\\Claude-launcher-projects",
+    "reparseModel": "claude-haiku-4-5-20251001"
+  },
+  "mcpServers": [],
+  "commonSkills": [],
+  "projects": [
+    {
+      "id": "318c7128-b337-45ca-a6f9-18740cbb3d93",
+      "name": "Claude_Code_Workshop_Capstone_Project",
+      "path": "C:\\Kavin\\ClaudeCode\\Claude-launcher-projects\\Claude_Code_Workshop_Capstone_Project",
+      "skills": []
+    }
+  ]
+}

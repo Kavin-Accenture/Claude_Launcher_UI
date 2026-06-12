@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Claude Launcher</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0b0d;
+      --panel:     #111316;
+      --border:    #1e2127;
+      --border-hi: #2e333d;
+      --green:     #4ade80;
+      --green-dim: rgba(74,222,128,.1);
+      --amber:     #fbbf24;
+      --red:       #f87171;
+      --text:      #dde1e9;
+      --muted:     #606472;
+      --sans:      'Space Grotesk', sans-serif;
+      --mono:      'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: grid;
+      place-items: start center;
+      padding: 48px 20px 80px;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 700px;
+    }
+
+    /* ── header ─────────────────────────────────── */
+    .hd {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 40px;
+    }
+
+    .hd-icon {
+      width: 38px; height: 38px;
+      background: var(--green-dim);
+      border: 1px solid var(--green);
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .hd-icon svg { width: 18px; height: 18px; stroke: var(--green); fill: none; stroke-width: 2; stroke-linecap: round; }
+
+    .hd-title {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .hd-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .status-dot {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .dot.ok  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.err { background: var(--red); }
+
+    /* ── card ───────────────────────────────────── */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    .card-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* ── quick prompts ──────────────────────────── */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .chip {
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 13px;
+      border-radius: 99px;
+      border: 1px solid var(--border-hi);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .chip:hover { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+
+    /* ── inputs ─────────────────────────────────── */
+    textarea, input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border-hi);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--sans);
+      font-size: 14px;
+      color: var(--text);
+      outline: none;
+      transition: border-color .2s;
+    }
+    textarea::placeholder, input::placeholder { color: var(--muted); }
+    textarea:focus, input:focus { border-color: var(--green); }
+
+    textarea {
+      resize: vertical;
+      min-height: 96px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    input[type="text"] { font-family: var(--mono); font-size: 13px; }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .row input { flex: 1; }
+
+    /* ── run button ─────────────────────────────── */
+    .run-btn {
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 14px;
+      padding: 11px 26px;
+      border-radius: 8px;
+      border: none;
+      background: var(--green);
+      color: #0a0b0d;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity .15s, transform .1s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .run-btn:hover { opacity: .88; }
+    .run-btn:active { transform: scale(.97); }
+    .run-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── toast log ──────────────────────────────── */
+    .log-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .log-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      animation: slideIn .2s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .log-entry.sent  { border-color: rgba(74,222,128,.25); }
+    .log-entry.error { border-color: rgba(248,113,113,.25); }
+
+    .log-time { color: var(--muted); flex-shrink: 0; }
+    .log-icon { flex-shrink: 0; }
+    .log-text { color: var(--text); line-height: 1.4; word-break: break-word; }
+    .log-text .dim { color: var(--muted); }
+
+    .empty-log {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    /* ── shortcuts hint ─────────────────────────── */
+    .hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .hint kbd {
+      font-family: var(--mono);
+      background: var(--border-hi);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- header -->
+  <div class="hd">
+    <div class="hd-icon">
+      <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+    </div>
+    <div>
+      <div class="hd-title">Claude Launcher</div>
+      <div class="hd-sub">Fire claude commands without watching the terminal</div>
+    </div>
+    <div class="status-dot">
+      <div class="dot" id="dot"></div>
+      <span id="statusTxt">checking…</span>
+    </div>
+  </div>
+
+  <!-- quick prompts -->
+  <div class="card">
+    <div class="card-label">Quick prompts</div>
+    <div class="chips" id="chips">
+      <button class="chip" data-p="Review this project for issues and summarise findings in NOTES.md">Review project</button>
+      <button class="chip" data-p="Fix any TypeScript errors in the src/ directory">Fix TS errors</button>
+      <button class="chip" data-p="Write unit tests for all untested functions">Write tests</button>
+      <button class="chip" data-p="Add JSDoc comments to every exported function">Add JSDoc</button>
+      <button class="chip" data-p="Refactor duplicate code and improve readability">Refactor</button>
+      <button class="chip" data-p="Update the README to reflect recent changes">Update README</button>
+    </div>
+
+    <!-- prompt textarea -->
+    <div class="card-label">Prompt</div>
+    <textarea id="prompt" placeholder="Describe the task for Claude to run in your project…"></textarea>
+
+    <!-- working dir + run -->
+    <div class="card-label">Working directory (optional)</div>
+    <div class="row">
+      <input type="text" id="cwd" placeholder="/Users/you/your-project"/>
+      <button class="run-btn" id="runBtn" onclick="fire()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Run
+      </button>
+    </div>
+    <p class="hint">Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to run · Server must be running on localhost:3131</p>
+  </div>
+
+  <!-- activity log -->
+  <div class="card">
+    <div class="card-label">Activity</div>
+    <div class="log-wrap" id="log">
+      <div class="empty-log">No commands fired yet</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const SERVER = "http://localhost:3131";
+
+  // ── server health check ────────────────────────────────────────────────
+  async function checkServer() {
+    try {
+      const r = await fetch(`${SERVER}/ping`, { signal: AbortSignal.timeout(1500) });
+      const ok = r.ok;
+      document.getElementById("dot").className = "dot " + (ok ? "ok" : "err");
+      document.getElementById("statusTxt").textContent = ok ? "server online" : "server error";
+    } catch {
+      document.getElementById("dot").className = "dot err";
+      document.getElementById("statusTxt").textContent = "server offline";
+    }
+  }
+  checkServer();
+  setInterval(checkServer, 5000);
+
+  // ── chip click ─────────────────────────────────────────────────────────
+  document.getElementById("chips").addEventListener("click", e => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    document.getElementById("prompt").value = chip.dataset.p;
+    document.getElementById("prompt").focus();
+  });
+
+  // ── keyboard shortcut ──────────────────────────────────────────────────
+  document.getElementById("prompt").addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); fire(); }
+  });
+
+  // ── fire ───────────────────────────────────────────────────────────────
+  async function fire() {
+    const prompt = document.getElementById("prompt").value.trim();
+    const cwd    = document.getElementById("cwd").value.trim();
+    const btn    = document.getElementById("runBtn");
+
+    if (!prompt) {
+      addLog("error", "⚠", "Enter a prompt first");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg> Firing…`;
+
+    try {
+      const res  = await fetch(`${SERVER}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, cwd: cwd || undefined }),
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        addLog("sent", "✦", prompt, `PID ${data.pid}${cwd ? " · " + cwd : ""}`);
+        document.getElementById("prompt").value = "";
+      } else {
+        addLog("error", "✗", data.error || "Server error");
+      }
+    } catch (err) {
+      addLog("error", "✗", "Cannot reach server — is server.js running?");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run`;
+    }
+  }
+
+  // ── log ────────────────────────────────────────────────────────────────
+  function addLog(type, icon, text, sub) {
+    const wrap = document.getElementById("log");
+    const empty = wrap.querySelector(".empty-log");
+    if (empty) empty.remove();
+
+    const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const el = document.createElement("div");
+    el.className = `log-entry ${type}`;
+    el.innerHTML = `
+      <span class="log-time">${t}</span>
+      <span class="log-icon">${icon}</span>
+      <span class="log-text">${esc(text)}${sub ? `<br><span class="dim">${esc(sub)}</span>` : ""}</span>
+    `;
+    wrap.prepend(el);
+
+    // keep log to 30 entries
+    const entries = wrap.querySelectorAll(".log-entry");
+    if (entries.length > 30) entries[entries.length - 1].remove();
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+</body>
+</html>

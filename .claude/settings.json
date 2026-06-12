@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**/.git/config)",
+      "mcp__github__*"
+    ]
+  }
+}

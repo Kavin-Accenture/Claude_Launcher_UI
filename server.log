@@ -1,0 +1,12 @@
+
+  Claude Launcher → http://localhost:3131
+
+[10:09:34 PM] GET /ping
+[10:09:46 PM] GET /
+[10:09:46 PM] GET /projects
+[10:09:46 PM] GET /mcp
+The system cannot find the path specified.
+[10:09:47 PM] GET /.well-known/appspecific/com.chrome.devtools.json
+[10:09:47 PM] GET /usage
+[10:09:48 PM] GET /config
+[10:09:49 PM] GET /usage
