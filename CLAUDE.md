@@ -173,6 +173,44 @@ Key functions:
 - **Relative timestamps** shown next to refresh buttons: "25 mins ago", "3 hrs ago" etc. Over 7 days shows "not refreshed in a while" in amber
 - **Model color coding** in usage: Haiku = green, Sonnet = blue, Opus = red
 
+## Model resolution
+
+### Skill runs (`POST /projects/:id/run`)
+Four-level priority chain — first non-null value wins:
+```
+session override → skill frontmatter model → config.settings.defaultModel → "claude-sonnet-4-6"
+```
+1. **Session override** — user picks a model in the skills tab dropdown; stored in `state.sessionModels[pid][skillId]`, passed per request, resets on navigation away from the project
+2. **Skill frontmatter** — `model:` field in the skill's `.md` file
+3. **defaultModel** — saved in `config.json` via the Settings page (`POST /settings`)
+4. **Hard fallback** — `"claude-sonnet-4-6"` baked into `server.js` — last resort if config is missing
+
+### Reparse & GitHub refresh
+Both always use `config.settings.reparseModel`, falling back to `"claude-haiku-4-5-20251001"`. The UI never passes a model for these — server decides. `defaultModel` is not consulted.
+
+### Settings page
+- `defaultModel` — controls skill runs when no session or frontmatter override is set
+- `reparseModel` — hardlocked to Haiku in the UI; not user-editable via the dropdown
+
+### Hardcoded model lists in index.html
+Three places define the available model options — all must be updated together if models change:
+| Location | What it controls |
+|---|---|
+| Settings page `<select id="sDefaultModel">` | Default model picker |
+| `renderSkillsTab` model options array | Per-skill session override selector |
+| Usage page `<select id="uFilterModel">` | Usage log filter (uses partial match: haiku/sonnet/opus) |
+
+### Key rule
+Never add a new `spawn`/`exec` call with a hardcoded model string. Always read from `config.settings.defaultModel` or `config.settings.reparseModel` with the appropriate fallback.
+
+## Clone location behaviour
+
+`config.settings.defaultCloneLocation` must be set and must exist on disk before a repo can be cloned via the Add Project modal.
+
+- **Not set (empty)** — server returns 400: _"Clone location not set. Go to Settings and set a default clone location before cloning."_
+- **Set but path doesn't exist** — server returns 400: _"Clone location '...' does not exist. Update it in Settings."_
+- **No silent fallback** — there is no `HOME` or `USERPROFILE` fallback. The error surfaces in the UI as a toast so the user knows to fix it in Settings before retrying.
+
 ## Adding a new skill — what to update
 
 1. Create `skills/<skill-name>.md` with frontmatter and prompt

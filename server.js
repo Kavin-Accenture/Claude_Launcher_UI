@@ -249,8 +249,11 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       const config = readJSON(CONFIG_FILE, { projects: [] });
       if (b.cloneUrl) {
-        const cloneDir =
-          config.settings?.defaultCloneLocation || process.env.HOME;
+        const cloneDir = config.settings?.defaultCloneLocation;
+        if (!cloneDir)
+          return send(res, 400, { ok: false, error: "Clone location not set. Go to Settings and set a default clone location before cloning." });
+        if (!fs.existsSync(cloneDir))
+          return send(res, 400, { ok: false, error: `Clone location "${cloneDir}" does not exist. Update it in Settings.` });
         const name = b.cloneUrl.split("/").pop().replace(".git", "");
         await new Promise((resolve, reject) => {
           exec(
