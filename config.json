@@ -4,7 +4,23 @@
     "defaultCloneLocation": "",
     "reparseModel": "claude-haiku-4-5-20251001"
   },
-  "mcpServers": [],
+  "mcpServers": [
+    {
+      "name": "claude.ai Figma",
+      "status": "disconnected"
+    },
+    {
+      "name": "github",
+      "status": "connected"
+    }
+  ],
   "commonSkills": [],
-  "projects": []
+  "projects": [
+    {
+      "id": "6ba0b07a-fbe8-43fc-9b14-a19a114827b0",
+      "name": "Claude_Code_Workshop_Capstone_Project",
+      "path": "C:\\Kavin\\ClaudeCode\\Claude-launcher-projects\\Claude_Code_Workshop_Capstone_Project",
+      "skills": []
+    }
+  ]
 }

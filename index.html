@@ -168,8 +168,24 @@ textarea{resize:vertical;line-height:1.5}
 .metric-card{background:var(--surface2);border-radius:8px;padding:14px}
 .metric-label{font-size:11px;color:var(--muted);margin-bottom:6px}
 .metric-value{font-size:22px;font-weight:500}
-.usage-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-.usage-filters select,.usage-filters input{width:auto;font-size:12px;padding:5px 8px}
+.usage-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.usage-filters select{width:auto;font-size:12px;padding:5px 8px}
+.cal-wrap{position:relative}
+.cal-trigger{font-family:var(--mono);font-size:12px;padding:5px 10px;min-width:110px;text-align:left;color:var(--muted);border:0.5px solid var(--border2);background:var(--surface);border-radius:7px}
+.cal-trigger.has-date{color:var(--text)}
+.cal-dropdown{display:none;position:absolute;top:calc(100% + 6px);left:0;background:var(--surface2);border:0.5px solid var(--border2);border-radius:10px;padding:12px;z-index:300;width:224px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.cal-dropdown.open{display:block}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.cal-nav button{padding:2px 8px;font-size:14px;border-color:transparent}
+.cal-month-label{font-size:12px;font-weight:500}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-day-name{font-size:10px;color:var(--muted);text-align:center;padding:3px 0}
+.cal-day{font-size:12px;text-align:center;padding:5px 2px;border-radius:5px;cursor:pointer;transition:background .1s}
+.cal-day:hover{background:var(--hint)}
+.cal-day.selected{background:var(--green);color:#0a0b0d;font-weight:500}
+.cal-day.empty{cursor:default}
+.cal-clear{font-size:11px;color:var(--muted);margin-top:8px;text-align:center;cursor:pointer;padding:2px 0}
+.cal-clear:hover{color:var(--text)}
 .usage-table{background:var(--surface);border:0.5px solid var(--border);border-radius:10px;overflow:hidden}
 .usage-head,.usage-row{display:grid;grid-template-columns:90px 1fr 1fr 1fr 90px 60px;gap:0;padding:9px 16px;align-items:center;min-width:0}
 .usage-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -279,9 +295,17 @@ textarea{resize:vertical;line-height:1.5}
       <option value="opus">Opus</option>
     </select>
     <select id="uFilterSkill" onchange="loadUsage()"><option value="">All skills</option></select>
-    <input type="date" id="uFrom" onchange="loadUsage()"/>
-    <span style="color:var(--muted);align-self:center;font-size:12px">to</span>
-    <input type="date" id="uTo" onchange="loadUsage()"/>
+    <div class="cal-wrap">
+      <button class="cal-trigger" id="uFromTrigger" onclick="toggleCal('from')">From date</button>
+      <input type="hidden" id="uFrom"/>
+      <div class="cal-dropdown" id="calFrom"></div>
+    </div>
+    <span style="color:var(--muted);font-size:12px">to</span>
+    <div class="cal-wrap">
+      <button class="cal-trigger" id="uToTrigger" onclick="toggleCal('to')">To date</button>
+      <input type="hidden" id="uTo"/>
+      <div class="cal-dropdown" id="calTo"></div>
+    </div>
   </div>
   <div class="usage-table">
     <div class="usage-head">
@@ -791,6 +815,75 @@ async function addSkill(pid, skillId, btn) {
   toast(`${skillId} added`);
 }
 
+// --- Calendar picker ---
+const calState = { from: { year: null, month: null }, to: { year: null, month: null } };
+const CAL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const CAL_DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+function toggleCal(which) {
+  const dropdown = document.getElementById(which === 'from' ? 'calFrom' : 'calTo');
+  const other = document.getElementById(which === 'from' ? 'calTo' : 'calFrom');
+  other.classList.remove('open');
+  if (dropdown.classList.contains('open')) { dropdown.classList.remove('open'); return; }
+  const now = new Date();
+  if (!calState[which].year) { calState[which].year = now.getFullYear(); calState[which].month = now.getMonth(); }
+  renderCal(which);
+  dropdown.classList.add('open');
+}
+
+function renderCal(which) {
+  const { year, month } = calState[which];
+  const selected = document.getElementById(which === 'from' ? 'uFrom' : 'uTo').value;
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  let grid = CAL_DAYS.map(d => `<div class="cal-day-name">${d}</div>`).join('');
+  for (let i = 0; i < firstDay; i++) grid += `<div class="cal-day empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    grid += `<div class="cal-day${selected===ds?' selected':''}" onclick="selectCalDay(${JSON.stringify(which)},${JSON.stringify(ds)})">${d}</div>`;
+  }
+  document.getElementById(which === 'from' ? 'calFrom' : 'calTo').innerHTML = `
+    <div class="cal-nav">
+      <button onclick="moveCalMonth(${JSON.stringify(which)},-1)">&#8249;</button>
+      <span class="cal-month-label">${CAL_MONTHS[month]} ${year}</span>
+      <button onclick="moveCalMonth(${JSON.stringify(which)},1)">&#8250;</button>
+    </div>
+    <div class="cal-grid">${grid}</div>
+    ${selected ? `<div class="cal-clear" onclick="clearCal(${JSON.stringify(which)})">Clear</div>` : ''}`;
+}
+
+function moveCalMonth(which, delta) {
+  let { year, month } = calState[which];
+  month += delta;
+  if (month < 0) { month = 11; year--; }
+  if (month > 11) { month = 0; year++; }
+  calState[which] = { year, month };
+  renderCal(which);
+}
+
+function selectCalDay(which, dateStr) {
+  document.getElementById(which === 'from' ? 'uFrom' : 'uTo').value = dateStr;
+  const trigger = document.getElementById(which === 'from' ? 'uFromTrigger' : 'uToTrigger');
+  trigger.textContent = dateStr;
+  trigger.classList.add('has-date');
+  document.getElementById(which === 'from' ? 'calFrom' : 'calTo').classList.remove('open');
+  loadUsage();
+}
+
+function clearCal(which) {
+  document.getElementById(which === 'from' ? 'uFrom' : 'uTo').value = '';
+  const trigger = document.getElementById(which === 'from' ? 'uFromTrigger' : 'uToTrigger');
+  trigger.textContent = which === 'from' ? 'From date' : 'To date';
+  trigger.classList.remove('has-date');
+  renderCal(which);
+  loadUsage();
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.cal-wrap')) document.querySelectorAll('.cal-dropdown').forEach(d => d.classList.remove('open'));
+});
+// --- End calendar picker ---
+
 let addMode = "clone", selectedScanPath = null;
 function openAddModal() {
   switchAddTab("clone");
@@ -816,7 +909,7 @@ async function scanProjects() {
   el.innerHTML = `<div style="font-size:12px;color:var(--muted)"><span class="spin"></span> Scanning…</div>`;
   const r = await api("GET", `/scan?path=${encodeURIComponent(scanPath)}`);
   if (!r.projects?.length) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">No new git projects found.</div>`; return; }
-  el.innerHTML = r.projects.map(p=>`<div class="skill-row" style="cursor:pointer" onclick="selectScanProject('${p.path}',this)">
+  el.innerHTML = r.projects.map(p=>`<div class="skill-row" style="cursor:pointer" onclick="selectScanProject(${JSON.stringify(p.path)},this)">
     <div><div class="skill-name">${p.name}</div><div class="skill-meta">${p.path}</div></div>
   </div>`).join("");
 }

@@ -16,8 +16,11 @@ function log(msg) {
 }
 
 function readJSON(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch { return fallback; }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return fallback;
+  }
 }
 
 function writeJSON(file, data) {
@@ -34,7 +37,7 @@ function parseFrontmatter(content) {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return {};
   const result = {};
-  match[1].split("\n").forEach(line => {
+  match[1].split("\n").forEach((line) => {
     const [key, ...rest] = line.split(":");
     if (key && rest.length) result[key.trim()] = rest.join(":").trim();
   });
@@ -43,9 +46,10 @@ function parseFrontmatter(content) {
 
 function readSkills() {
   if (!fs.existsSync(SKILLS_DIR)) return [];
-  return fs.readdirSync(SKILLS_DIR)
-    .filter(f => f.endsWith(".md"))
-    .map(f => {
+  return fs
+    .readdirSync(SKILLS_DIR)
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => {
       const content = fs.readFileSync(path.join(SKILLS_DIR, f), "utf8");
       const fm = parseFrontmatter(content);
       return {
@@ -61,14 +65,20 @@ function readSkills() {
 
 function getMCPStatus() {
   try {
-    const out = execSync("claude mcp list 2>/dev/null", { timeout: 5000 }).toString();
+    const out = execSync("claude mcp list", {
+      timeout: 15000,
+      stdio: ["pipe", "pipe", "ignore"],
+    }).toString();
     const servers = [];
-    out.split("\n").forEach(line => {
-      if (line.trim()) {
-        const connected = line.toLowerCase().includes("connected") || line.toLowerCase().includes("running");
-        const name = line.split(/[\s:]/)[0].trim();
-        if (name) servers.push({ name, status: connected ? "connected" : "disconnected" });
-      }
+    out.split("\n").forEach((line) => {
+      // server lines look like: "name: <cmd> - <status>"
+      if (!line.includes(": ") || !line.includes(" - ")) return;
+      const name = line.split(":")[0].trim();
+      if (!name) return;
+      const connected =
+        line.toLowerCase().includes("connected") ||
+        line.toLowerCase().includes("running");
+      servers.push({ name, status: connected ? "connected" : "disconnected" });
     });
     return servers;
   } catch {
@@ -78,7 +88,7 @@ function getMCPStatus() {
 
 function getProjectByID(id) {
   const config = readJSON(CONFIG_FILE, { projects: [] });
-  return config.projects.find(p => p.id === id);
+  return config.projects.find((p) => p.id === id);
 }
 
 function runGit(cwd, args) {
@@ -90,28 +100,46 @@ function runGit(cwd, args) {
   });
 }
 
+// --output-format json gives structured token counts reliably
+// Falls back to text pattern matching if JSON parse fails
 function spawnClaude(args, cwd) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
-    const child = spawn("claude", args, { cwd, env: { ...process.env } });
-    let stdout = "", stderr = "";
-    child.stdout.on("data", d => stdout += d);
-    child.stderr.on("data", d => stderr += d);
-    child.on("close", code => {
+    const fullArgs = [...args, "--output-format", "json"];
+    const child = spawn("claude", fullArgs, { cwd, env: { ...process.env } });
+    let stdout = "",
+      stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("close", (code) => {
       const duration = Math.round((Date.now() - start) / 1000);
-      resolve({ stdout, stderr, code, duration });
+      let inputTokens = 0,
+        outputTokens = 0,
+        textOutput = stdout;
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        // claude --output-format json: { result, usage: { input_tokens, output_tokens } }
+        inputTokens = parsed?.usage?.input_tokens || 0;
+        outputTokens = parsed?.usage?.output_tokens || 0;
+        textOutput = parsed?.result || stdout;
+      } catch {
+        // fallback: scan raw text for token patterns
+        const inMatch = stdout.match(/(\d[\d,]*)\s*input token/i);
+        const outMatch = stdout.match(/(\d[\d,]*)\s*output token/i);
+        inputTokens = inMatch ? parseInt(inMatch[1].replace(/,/g, "")) : 0;
+        outputTokens = outMatch ? parseInt(outMatch[1].replace(/,/g, "")) : 0;
+      }
+      resolve({
+        stdout: textOutput,
+        stderr,
+        code,
+        duration,
+        inputTokens,
+        outputTokens,
+      });
     });
     child.on("error", reject);
   });
-}
-
-function parseTokens(output) {
-  const inputMatch = output.match(/(\d[\d,]*)\s*input token/i);
-  const outputMatch = output.match(/(\d[\d,]*)\s*output token/i);
-  return {
-    inputTokens: inputMatch ? parseInt(inputMatch[1].replace(/,/g, "")) : 0,
-    outputTokens: outputMatch ? parseInt(outputMatch[1].replace(/,/g, "")) : 0,
-  };
 }
 
 function appendUsage(entry) {
@@ -121,11 +149,15 @@ function appendUsage(entry) {
 }
 
 function body(req) {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     let b = "";
-    req.on("data", d => b += d);
+    req.on("data", (d) => (b += d));
     req.on("end", () => {
-      try { resolve(JSON.parse(b)); } catch { resolve({}); }
+      try {
+        resolve(JSON.parse(b));
+      } catch {
+        resolve({});
+      }
     });
   });
 }
@@ -139,15 +171,19 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    return res.end();
+  }
 
   const url = req.url.split("?")[0];
-  const query = Object.fromEntries(new URLSearchParams(req.url.split("?")[1] || ""));
+  const query = Object.fromEntries(
+    new URLSearchParams(req.url.split("?")[1] || ""),
+  );
 
   log(`${req.method} ${url}`);
 
   try {
-
     if (req.method === "GET" && url === "/") {
       res.writeHead(200, { "Content-Type": "text/html" });
       return res.end(fs.readFileSync(path.join(BASE, "index.html")));
@@ -183,7 +219,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url === "/projects") {
       const config = readJSON(CONFIG_FILE, { projects: [] });
-      const projects = config.projects.map(p => {
+      const projects = config.projects.map((p) => {
         const cacheDir = path.join(CACHE_DIR, p.name);
         const claudeCache = readJSON(path.join(cacheDir, "claude.json"), null);
         const githubCache = readJSON(path.join(cacheDir, "github.json"), null);
@@ -196,28 +232,43 @@ const server = http.createServer(async (req, res) => {
           claudeFetchedAt: claudeCache?.fetchedAt || null,
         };
       });
-      return send(res, 200, { projects, skills: readSkills(), commonSkills: config.commonSkills || [] });
+      return send(res, 200, {
+        projects,
+        skills: readSkills(),
+        commonSkills: config.commonSkills || [],
+      });
     }
 
     if (req.method === "POST" && url === "/projects") {
       const b = await body(req);
       const config = readJSON(CONFIG_FILE, { projects: [] });
       if (b.cloneUrl) {
-        const cloneDir = config.settings?.defaultCloneLocation || process.env.HOME;
+        const cloneDir =
+          config.settings?.defaultCloneLocation || process.env.HOME;
         const name = b.cloneUrl.split("/").pop().replace(".git", "");
         await new Promise((resolve, reject) => {
-          exec(`git clone ${b.cloneUrl}`, { cwd: cloneDir }, (err, stdout, stderr) => {
-            if (err) reject(stderr); else resolve();
-          });
+          exec(
+            `git clone ${b.cloneUrl}`,
+            { cwd: cloneDir },
+            (err, stdout, stderr) => {
+              if (err) reject(stderr);
+              else resolve();
+            },
+          );
         });
         const projectPath = path.join(cloneDir, name);
-        const project = { id: randomUUID(), name, path: projectPath, skills: [] };
+        const project = {
+          id: randomUUID(),
+          name,
+          path: projectPath,
+          skills: [],
+        };
         config.projects.push(project);
         writeJSON(CONFIG_FILE, config);
         return send(res, 200, { ok: true, project });
       } else if (b.path) {
         const name = path.basename(b.path);
-        if (config.projects.find(p => p.path === b.path))
+        if (config.projects.find((p) => p.path === b.path))
           return send(res, 400, { ok: false, error: "Project already added" });
         const project = { id: randomUUID(), name, path: b.path, skills: [] };
         config.projects.push(project);
@@ -230,7 +281,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "DELETE" && url.match(/^\/projects\/[^/]+$/)) {
       const id = url.split("/")[2];
       const config = readJSON(CONFIG_FILE, { projects: [] });
-      config.projects = config.projects.filter(p => p.id !== id);
+      config.projects = config.projects.filter((p) => p.id !== id);
       writeJSON(CONFIG_FILE, config);
       return send(res, 200, { ok: true });
     }
@@ -240,7 +291,8 @@ const server = http.createServer(async (req, res) => {
       const id = projectMatch[1];
       const action = projectMatch[2];
       const project = getProjectByID(id);
-      if (!project) return send(res, 404, { ok: false, error: "Project not found" });
+      if (!project)
+        return send(res, 404, { ok: false, error: "Project not found" });
 
       if (req.method === "GET" && action === "cache") {
         const cacheDir = path.join(CACHE_DIR, project.name);
@@ -252,9 +304,9 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "POST" && action === "skills") {
         const b = await body(req);
         const config = readJSON(CONFIG_FILE, { projects: [] });
-        const p = config.projects.find(p => p.id === id);
+        const p = config.projects.find((p) => p.id === id);
         if (!p.skills) p.skills = [];
-        if (!p.skills.find(s => s.id === b.skillId)) {
+        if (!p.skills.find((s) => s.id === b.skillId)) {
           p.skills.push({ id: b.skillId, model: null });
           writeJSON(CONFIG_FILE, config);
         }
@@ -264,8 +316,8 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "DELETE" && action.startsWith("skills/")) {
         const skillId = action.split("/")[1];
         const config = readJSON(CONFIG_FILE, { projects: [] });
-        const p = config.projects.find(p => p.id === id);
-        p.skills = (p.skills || []).filter(s => s.id !== skillId);
+        const p = config.projects.find((p) => p.id === id);
+        p.skills = (p.skills || []).filter((s) => s.id !== skillId);
         writeJSON(CONFIG_FILE, config);
         return send(res, 200, { ok: true });
       }
@@ -274,25 +326,58 @@ const server = http.createServer(async (req, res) => {
         const claudeMdPath = path.join(project.path, "CLAUDE.md");
         if (!fs.existsSync(claudeMdPath)) {
           log(`Running claude /init in ${project.path}`);
-          await spawnClaude(["/init"], project.path);
+          const initResult = await spawnClaude(["/init"], project.path);
+          appendUsage({
+            timestamp: new Date().toISOString(),
+            project: project.name,
+            projectId: id,
+            skill: "init",
+            model: "claude-haiku-4-5-20251001",
+            inputTokens: initResult.inputTokens,
+            outputTokens: initResult.outputTokens,
+            duration: initResult.duration,
+          });
         }
         if (!fs.existsSync(claudeMdPath))
-          return send(res, 400, { ok: false, error: "CLAUDE.md not found even after /init" });
+          return send(res, 400, {
+            ok: false,
+            error: "CLAUDE.md not found even after /init",
+          });
         const claudeMd = fs.readFileSync(claudeMdPath, "utf8");
         const prompt = `Read this CLAUDE.md file and extract structured information. Return ONLY valid JSON with these exact fields: summary (string, 1-2 sentences describing the project), stack (array of technology name strings), structure (string, folder tree as plain text). No markdown formatting, no explanation, just the raw JSON object.\n\nCLAUDE.md:\n${claudeMd}`;
         const config = readJSON(CONFIG_FILE, {});
-        const model = config.settings?.reparseModel || "claude-haiku-4-5-20251001";
-        const result = await spawnClaude(["-p", prompt, "--model", model], project.path);
-        const reparseTokens = parseTokens(result.stdout + result.stderr);
-        appendUsage({ timestamp: new Date().toISOString(), project: project.name, projectId: id, skill: "reparse", model, inputTokens: reparseTokens.inputTokens, outputTokens: reparseTokens.outputTokens, duration: reparseTokens.duration });
+        const model =
+          config.settings?.reparseModel || "claude-haiku-4-5-20251001";
+        const result = await spawnClaude(
+          ["-p", prompt, "--model", model],
+          project.path,
+        );
+        // log reparse to usage — duration comes from result, not tokens object
+        appendUsage({
+          timestamp: new Date().toISOString(),
+          project: project.name,
+          projectId: id,
+          skill: "reparse",
+          model,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          duration: result.duration,
+        });
         try {
           const clean = result.stdout.replace(/```json|```/g, "").trim();
           const parsed = JSON.parse(clean);
           const cacheDir = ensureCache(project.name);
-          writeJSON(path.join(cacheDir, "claude.json"), { ...parsed, fetchedAt: new Date().toISOString() });
+          writeJSON(path.join(cacheDir, "claude.json"), {
+            ...parsed,
+            fetchedAt: new Date().toISOString(),
+          });
           return send(res, 200, { ok: true, data: parsed });
         } catch {
-          return send(res, 500, { ok: false, error: "Failed to parse response", raw: result.stdout });
+          return send(res, 500, {
+            ok: false,
+            error: "Failed to parse response",
+            raw: result.stdout,
+          });
         }
       }
 
@@ -306,24 +391,37 @@ const server = http.createServer(async (req, res) => {
         const fm = parseFrontmatter(skillContent);
         const prompt = skillContent.replace(/^---[\s\S]*?---\n/, "").trim();
         const config = readJSON(CONFIG_FILE, {});
-        const effectiveModel = model || fm.model || config.settings?.defaultModel || "claude-sonnet-4-6";
+        const effectiveModel =
+          model ||
+          fm.model ||
+          config.settings?.defaultModel ||
+          "claude-sonnet-4-6";
         const args = ["-p", prompt, "--model", effectiveModel];
         if (!isFirst) args.push("--continue");
         if (fm.allowedTools) args.push("--allowedTools", fm.allowedTools);
-        log(`Running skill ${skillId} on ${project.name} with model ${effectiveModel}`);
+        log(
+          `Running skill ${skillId} on ${project.name} with model ${effectiveModel}`,
+        );
         const result = await spawnClaude(args, project.path);
-        const tokens = parseTokens(result.stdout + result.stderr);
         appendUsage({
           timestamp: new Date().toISOString(),
           project: project.name,
           projectId: id,
           skill: skillId,
           model: effectiveModel,
-          inputTokens: tokens.inputTokens,
-          outputTokens: tokens.outputTokens,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
           duration: result.duration,
         });
-        return send(res, 200, { ok: true, output: result.stdout, tokens, duration: result.duration });
+        return send(res, 200, {
+          ok: true,
+          output: result.stdout,
+          tokens: {
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+          },
+          duration: result.duration,
+        });
       }
 
       if (req.method === "POST" && action === "branch/switch") {
@@ -337,19 +435,33 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === "POST" && action === "branch/refresh") {
-        const branches = await runGit(project.path, ["branch", "-a", "--format=%(refname:short)"]);
-        const current = await runGit(project.path, ["branch", "--show-current"]);
-        const branchList = [...new Set(
-          branches.split("\n")
-            .map(b => b.trim().replace(/^origin\//, ""))
-            .filter(b => b && !b.includes("HEAD"))
-        )];
+        const branches = await runGit(project.path, [
+          "branch",
+          "-a",
+          "--format=%(refname:short)",
+        ]);
+        const current = await runGit(project.path, [
+          "branch",
+          "--show-current",
+        ]);
+        const branchList = [
+          ...new Set(
+            branches
+              .split("\n")
+              .map((b) => b.trim().replace(/^origin\//, ""))
+              .filter((b) => b && !b.includes("HEAD")),
+          ),
+        ];
         const cacheDir = ensureCache(project.name);
         const existing = readJSON(path.join(cacheDir, "github.json"), {});
         existing.branches = branchList;
         existing.currentBranch = current;
         writeJSON(path.join(cacheDir, "github.json"), existing);
-        return send(res, 200, { ok: true, branches: branchList, currentBranch: current });
+        return send(res, 200, {
+          ok: true,
+          branches: branchList,
+          currentBranch: current,
+        });
       }
 
       if (req.method === "POST" && action === "github/refresh") {
@@ -358,28 +470,52 @@ Get: 1) All open pull requests with fields: number, title, state, author (login)
 2) All open issues with fields: number, title, labels (array of name strings), assignees (array of login strings), author (login), createdAt
 Return ONLY a raw JSON object with shape: {"prs": [...], "issues": [...]}. No markdown, no explanation.`;
         const config2 = readJSON(CONFIG_FILE, {});
-        const githubModel = config2.settings?.reparseModel || "claude-haiku-4-5-20251001";
-        const result = await spawnClaude(["-p", prompt, "--model", githubModel], project.path);
-        const githubTokens = parseTokens(result.stdout + result.stderr);
-        appendUsage({ timestamp: new Date().toISOString(), project: project.name, projectId: id, skill: "github-refresh", model: githubModel, inputTokens: githubTokens.inputTokens, outputTokens: githubTokens.outputTokens, duration: githubTokens.duration });
+        const githubModel =
+          config2.settings?.reparseModel || "claude-haiku-4-5-20251001";
+        const result = await spawnClaude(
+          ["-p", prompt, "--model", githubModel],
+          project.path,
+        );
+        // log github refresh to usage
+        appendUsage({
+          timestamp: new Date().toISOString(),
+          project: project.name,
+          projectId: id,
+          skill: "github-refresh",
+          model: githubModel,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          duration: result.duration,
+        });
         try {
           const clean = result.stdout.replace(/```json|```/g, "").trim();
           const parsed = JSON.parse(clean);
           const cacheDir = ensureCache(project.name);
           const existing = readJSON(path.join(cacheDir, "github.json"), {});
           writeJSON(path.join(cacheDir, "github.json"), {
-            ...existing, ...parsed, githubFetchedAt: new Date().toISOString()
+            ...existing,
+            ...parsed,
+            githubFetchedAt: new Date().toISOString(),
           });
           return send(res, 200, { ok: true, data: parsed });
         } catch {
-          return send(res, 500, { ok: false, error: "Failed to parse GitHub response", raw: result.stdout });
+          return send(res, 500, {
+            ok: false,
+            error: "Failed to parse GitHub response",
+            raw: result.stdout,
+          });
         }
       }
 
       if (req.method === "GET" && action === "usage") {
         const usage = readJSON(USAGE_FILE, []);
-        const projectUsage = usage.filter(u => u.projectId === id || u.project === project.name);
-        const totalTokens = projectUsage.reduce((s, u) => s + (u.inputTokens || 0) + (u.outputTokens || 0), 0);
+        const projectUsage = usage.filter(
+          (u) => u.projectId === id || u.project === project.name,
+        );
+        const totalTokens = projectUsage.reduce(
+          (s, u) => s + (u.inputTokens || 0) + (u.outputTokens || 0),
+          0,
+        );
         return send(res, 200, { runs: projectUsage, totalTokens });
       }
     }
@@ -387,17 +523,41 @@ Return ONLY a raw JSON object with shape: {"prs": [...], "issues": [...]}. No ma
     if (req.method === "GET" && url === "/usage") {
       const usage = readJSON(USAGE_FILE, []);
       let filtered = usage;
-      if (query.project) filtered = filtered.filter(u => u.project === query.project);
-      if (query.model) filtered = filtered.filter(u => u.model === query.model);
-      if (query.skill) filtered = filtered.filter(u => u.skill === query.skill);
-      if (query.from) filtered = filtered.filter(u => u.timestamp >= query.from);
-      if (query.to) filtered = filtered.filter(u => u.timestamp <= query.to + "T23:59:59");
-      const totalTokens = filtered.reduce((s, u) => s + (u.inputTokens || 0) + (u.outputTokens || 0), 0);
-      const avgDuration = filtered.length ? Math.round(filtered.reduce((s, u) => s + (u.duration || 0), 0) / filtered.length) : 0;
+      if (query.project)
+        filtered = filtered.filter((u) => u.project === query.project);
+      if (query.model)
+        filtered = filtered.filter((u) => u.model === query.model);
+      if (query.skill)
+        filtered = filtered.filter((u) => u.skill === query.skill);
+      if (query.from)
+        filtered = filtered.filter((u) => u.timestamp >= query.from);
+      if (query.to)
+        filtered = filtered.filter(
+          (u) => u.timestamp <= query.to + "T23:59:59",
+        );
+      const totalTokens = filtered.reduce(
+        (s, u) => s + (u.inputTokens || 0) + (u.outputTokens || 0),
+        0,
+      );
+      const avgDuration = filtered.length
+        ? Math.round(
+            filtered.reduce((s, u) => s + (u.duration || 0), 0) /
+              filtered.length,
+          )
+        : 0;
       const skillCounts = {};
-      filtered.forEach(u => skillCounts[u.skill] = (skillCounts[u.skill] || 0) + 1);
-      const topSkill = Object.entries(skillCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-      return send(res, 200, { runs: filtered, totalTokens, avgDuration, topSkill, count: filtered.length });
+      filtered.forEach(
+        (u) => (skillCounts[u.skill] = (skillCounts[u.skill] || 0) + 1),
+      );
+      const topSkill =
+        Object.entries(skillCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+      return send(res, 200, {
+        runs: filtered,
+        totalTokens,
+        avgDuration,
+        topSkill,
+        count: filtered.length,
+      });
     }
 
     if (req.method === "GET" && url === "/scan") {
@@ -405,12 +565,16 @@ Return ONLY a raw JSON object with shape: {"prs": [...], "issues": [...]}. No ma
       if (!scanPath || !fs.existsSync(scanPath))
         return send(res, 400, { ok: false, error: "Invalid path" });
       const config = readJSON(CONFIG_FILE, { projects: [] });
-      const existing = new Set(config.projects.map(p => p.path));
+      const existing = new Set(config.projects.map((p) => p.path));
       const found = [];
-      fs.readdirSync(scanPath).forEach(name => {
+      fs.readdirSync(scanPath).forEach((name) => {
         try {
           const full = path.join(scanPath, name);
-          if (fs.statSync(full).isDirectory() && fs.existsSync(path.join(full, ".git")) && !existing.has(full)) {
+          if (
+            fs.statSync(full).isDirectory() &&
+            fs.existsSync(path.join(full, ".git")) &&
+            !existing.has(full)
+          ) {
             found.push({ name, path: full });
           }
         } catch {}
@@ -419,7 +583,6 @@ Return ONLY a raw JSON object with shape: {"prs": [...], "issues": [...]}. No ma
     }
 
     send(res, 404, { error: "Not found" });
-
   } catch (err) {
     log(`ERROR: ${err.message}`);
     send(res, 500, { ok: false, error: err.message });
