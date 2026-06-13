@@ -507,21 +507,22 @@ function projectCard(p) {
   </div>`;
 }
 
-function branchDropdown(p, size="small") {
+function branchDropdown(p, ctx='') {
   const branch = p.currentBranch || "—";
   const bc = branchClass(branch);
   const pid = p.id;
-  return `<div class="branch-wrap" id="bw-${pid}">
-    <button class="branch-btn pill ${bc}" onclick="toggleBranchDD('${pid}')" style="font-size:11px">
+  const uid = ctx + pid;
+  return `<div class="branch-wrap" id="bw-${uid}">
+    <button class="branch-btn pill ${bc}" onclick="toggleBranchDD('${pid}','${ctx}')" style="font-size:11px">
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-      <span id="branchLabel-${pid}">${branch}</span>
+      <span id="branchLabel-${uid}">${branch}</span>
     </button>
-    <div class="branch-dropdown" id="bd-${pid}">
-      <div id="branchItems-${pid}">
+    <div class="branch-dropdown" id="bd-${uid}">
+      <div id="branchItems-${uid}">
         <div style="padding:8px 12px;font-size:11px;color:var(--muted)">Click refresh to load branches</div>
       </div>
       <div class="branch-sep"></div>
-      <div class="branch-refresh-btn" onclick="refreshBranches('${pid}')">
+      <div class="branch-refresh-btn" onclick="refreshBranches('${pid}','${ctx}')">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         Refresh branches
       </div>
@@ -529,11 +530,18 @@ function branchDropdown(p, size="small") {
   </div>`;
 }
 
-function toggleBranchDD(pid) {
+function toggleBranchDD(pid, ctx='') {
+  const uid = ctx + pid;
   document.querySelectorAll(".branch-dropdown").forEach(d => {
-    if (d.id !== "bd-" + pid) d.classList.remove("open");
+    if (d.id !== "bd-" + uid) d.classList.remove("open");
   });
-  document.getElementById("bd-" + pid).classList.toggle("open");
+  const dd = document.getElementById("bd-" + uid);
+  const opening = !dd.classList.contains("open");
+  dd.classList.toggle("open");
+  if (opening) {
+    const p = state.projects.find(x => x.id === pid);
+    if (p?.branches?.length) renderBranchItems(pid, p.branches, p.currentBranch, ctx);
+  }
 }
 
 document.addEventListener("click", e => {
@@ -542,43 +550,44 @@ document.addEventListener("click", e => {
   }
 });
 
-async function refreshBranches(pid) {
-  const itemsEl = document.getElementById("branchItems-" + pid);
+async function refreshBranches(pid, ctx='') {
+  const uid = ctx + pid;
+  const itemsEl = document.getElementById("branchItems-" + uid);
   if (!itemsEl) return;
   itemsEl.innerHTML = `<div style="padding:8px 12px;font-size:11px;color:var(--muted)"><span class="spin"></span> Loading…</div>`;
   try {
     const r = await api("POST", `/projects/${pid}/branch/refresh`);
     if (!r.ok) throw new Error(r.error);
-    renderBranchItems(pid, r.branches, r.currentBranch);
-    const label = document.getElementById("branchLabel-" + pid);
-    if (label) label.textContent = r.currentBranch;
+    renderBranchItems(pid, r.branches, r.currentBranch, ctx);
+    document.querySelectorAll(`[id^="branchLabel-"][id$="${pid}"]`).forEach(el => el.textContent = r.currentBranch);
     const p = state.projects.find(x => x.id === pid);
     if (p) { p.branches = r.branches; p.currentBranch = r.currentBranch; }
     toast("Branches refreshed");
   } catch(e) { toast(e.message, "err"); itemsEl.innerHTML = `<div style="padding:8px 12px;font-size:11px;color:var(--red)">Failed: ${e.message}</div>`; }
 }
 
-function renderBranchItems(pid, branches, current) {
-  const itemsEl = document.getElementById("branchItems-" + pid);
+function renderBranchItems(pid, branches, current, ctx='') {
+  const uid = ctx + pid;
+  const itemsEl = document.getElementById("branchItems-" + uid);
   if (!itemsEl) return;
   itemsEl.innerHTML = branches.map(b =>
-    `<div class="branch-item${b===current?" current":""}" onclick="switchBranch('${pid}','${b}')">
+    `<div class="branch-item${b===current?" current":""}" onclick="switchBranch('${pid}','${b}','${ctx}')">
       ${b===current?'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>':'<span style="width:10px"></span>'}
       ${b}
     </div>`
   ).join("");
 }
 
-async function switchBranch(pid, branch) {
-  document.getElementById("bd-" + pid)?.classList.remove("open");
+async function switchBranch(pid, branch, ctx='') {
+  const uid = ctx + pid;
+  document.getElementById("bd-" + uid)?.classList.remove("open");
   const p = state.projects.find(x => x.id === pid);
   const current = p?.currentBranch;
   if (branch === current) return;
   try {
     const r = await api("POST", `/projects/${pid}/branch/switch`, { branch });
     if (!r.ok) throw new Error(r.error);
-    const label = document.getElementById("branchLabel-" + pid);
-    if (label) label.textContent = branch;
+    document.querySelectorAll(`[id^="branchLabel-"][id$="${pid}"]`).forEach(el => el.textContent = branch);
     if (p) p.currentBranch = branch;
     toast(`Switched to ${branch} — reparsing CLAUDE.md…`);
     await api("POST", `/projects/${pid}/reparse`);
@@ -600,8 +609,8 @@ async function loadProjectDetail(id) {
   if (!p) return;
   state.currentProject = p;
   document.getElementById("detailName").textContent = p.name;
-  document.getElementById("detailBranch").innerHTML = branchDropdown(p);
-  if (p.branches?.length) renderBranchItems(id, p.branches, p.currentBranch);
+  document.getElementById("detailBranch").innerHTML = branchDropdown(p, 'd-');
+  if (p.branches?.length) renderBranchItems(id, p.branches, p.currentBranch, 'd-');
   const usageData = await api("GET", `/projects/${id}/usage`);
   document.getElementById("detailTokens").textContent = fmtTokens(usageData.totalTokens) + " tokens total";
   const cache = await api("GET", `/projects/${id}/cache`);
@@ -909,15 +918,29 @@ async function scanProjects() {
   el.innerHTML = `<div style="font-size:12px;color:var(--muted)"><span class="spin"></span> Scanning…</div>`;
   const r = await api("GET", `/scan?path=${encodeURIComponent(scanPath)}`);
   if (!r.projects?.length) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">No new git projects found.</div>`; return; }
-  el.innerHTML = r.projects.map(p=>`<div class="skill-row" style="cursor:pointer" onclick="selectScanProject(${JSON.stringify(p.path)},this)">
-    <div><div class="skill-name">${p.name}</div><div class="skill-meta">${p.path}</div></div>
-  </div>`).join("");
+  selectedScanPath = null;
+  el.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Select a project to add:</div>` +
+    r.projects.map(p => {
+      const safePath = p.path.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      return `<div class="scan-row" data-path="${safePath}" onclick="selectScanProject(this)" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-radius:8px;margin-bottom:8px;border:0.5px solid transparent;transition:border-color .15s,background .15s">
+        <div class="scan-dot" style="width:14px;height:14px;border-radius:50%;border:0.5px solid var(--border2);flex-shrink:0;transition:background .15s,border-color .15s"></div>
+        <div style="text-align:left"><div class="skill-name">${p.name}</div><div class="skill-meta">${p.path}</div></div>
+      </div>`;
+    }).join("");
 }
 
-function selectScanProject(path, el) {
-  selectedScanPath = path;
-  document.querySelectorAll("#scanResults .skill-row").forEach(r=>r.style.background="");
-  el.style.background = "var(--hint)";
+function selectScanProject(el) {
+  selectedScanPath = el.dataset.path;
+  document.querySelectorAll("#scanResults .scan-row").forEach(r => {
+    r.style.borderColor = "transparent";
+    r.style.background = "var(--surface2)";
+    r.querySelector(".scan-dot").style.background = "";
+    r.querySelector(".scan-dot").style.borderColor = "var(--border2)";
+  });
+  el.style.borderColor = "var(--green)";
+  el.style.background = "var(--green-bg)";
+  el.querySelector(".scan-dot").style.background = "var(--green)";
+  el.querySelector(".scan-dot").style.borderColor = "var(--green)";
 }
 
 async function confirmAddProject() {

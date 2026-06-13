@@ -573,7 +573,8 @@ Return ONLY a raw JSON object with shape: {"prs": [...], "issues": [...]}. No ma
           if (
             fs.statSync(full).isDirectory() &&
             fs.existsSync(path.join(full, ".git")) &&
-            !existing.has(full)
+            !existing.has(full) &&
+            path.resolve(full) !== path.resolve(BASE)
           ) {
             found.push({ name, path: full });
           }
