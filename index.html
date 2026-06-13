@@ -662,8 +662,10 @@ function renderGithubTab(pid, cache) {
   const el = document.getElementById("tab-github");
   const rt = relTime(cache?.githubFetchedAt);
   const rtHtml = rt ? `<span class="refresh-time${rt.stale?" stale":""}">${rt.text}</span>` : `<span class="refresh-time stale">never refreshed</span>`;
+  const repoLink = cache?.repoUrl ? `<a href="${cache.repoUrl}" target="_blank" rel="noopener" style="font-size:12px;color:var(--blue);font-family:var(--mono);text-decoration:none" title="Open repo on GitHub">↗ ${cache.repoUrl.replace('https://github.com/','')}</a>` : '';
   el.innerHTML = `
   <div class="refresh-row">${rtHtml}<button onclick="refreshGithub('${pid}')" style="font-size:12px">↻ Refresh</button></div>
+  ${repoLink ? `<div style="margin-bottom:14px">${repoLink}</div>` : ''}
   <div class="sub-tabs">
     <div class="sub-tab active" onclick="switchSubTab(this,'prs-${pid}','issues-${pid}')">Pull requests</div>
     <div class="sub-tab" onclick="switchSubTab(this,'issues-${pid}','prs-${pid}')">Issues</div>
@@ -691,8 +693,8 @@ function renderPRs(prs) {
   if (!prs.length) return `<div class="empty"><p>No open pull requests. Click refresh to load.</p></div>`;
   return `<div class="table-head pr-row"><span>#</span><span>Title</span><span>State</span><span>Author</span><span>Updated</span></div>
   <div class="table-body">${prs.map(pr=>`<div class="pr-row">
-    <span class="num">#${pr.number}</span>
-    <span style="font-size:13px">${pr.title}</span>
+    <span class="num">${pr.url ? `<a href="${pr.url}" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:none">#${pr.number}</a>` : `#${pr.number}`}</span>
+    <span style="font-size:13px">${pr.url ? `<a href="${pr.url}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none">${pr.title}</a>` : pr.title}</span>
     ${prStateHtml(pr)}
     <span style="font-size:12px;color:var(--muted)">${pr.author||"—"}</span>
     <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">${relTime(pr.updatedAt)?.text||"—"}</span>
@@ -703,8 +705,8 @@ function renderIssues(issues) {
   if (!issues.length) return `<div class="empty"><p>No open issues. Click refresh to load.</p></div>`;
   return `<div class="table-head issue-row"><span>#</span><span>Title</span><span>Labels</span><span>Opened</span></div>
   <div class="table-body">${issues.map(i=>`<div class="issue-row">
-    <span class="num">#${i.number}</span>
-    <span style="font-size:13px">${i.title}</span>
+    <span class="num">${i.url ? `<a href="${i.url}" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:none">#${i.number}</a>` : `#${i.number}`}</span>
+    <span style="font-size:13px">${i.url ? `<a href="${i.url}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none">${i.title}</a>` : i.title}</span>
     <span>${(i.labels||[]).map(l=>`<span class="label-pill">${l}</span>`).join("")}</span>
     <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">${relTime(i.createdAt)?.text||"—"}</span>
   </div>`).join("")}</div>`;

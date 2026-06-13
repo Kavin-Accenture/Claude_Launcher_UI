@@ -474,9 +474,12 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === "POST" && action === "github/refresh") {
+        const remoteUrl = await runGit(project.path, ["remote", "get-url", "origin"]).catch(() => "");
+        const repoMatch = remoteUrl.match(/github\.com[:/](.+?\/.+?)(?:\.git)?$/);
+        const repoUrl = repoMatch ? `https://github.com/${repoMatch[1]}` : null;
         const prompt = `Use the GitHub MCP server to fetch data for the repository in the current directory.
-Get: 1) All open pull requests with fields: number, title, state, author (login), branch (head ref), isDraft, reviewDecision, createdAt, updatedAt
-2) All open issues with fields: number, title, labels (array of name strings), assignees (array of login strings), author (login), createdAt
+Get: 1) All open pull requests with fields: number, title, url, state, author (login), branch (head ref), isDraft, reviewDecision, createdAt, updatedAt
+2) All open issues with fields: number, title, url, labels (array of name strings), assignees (array of login strings), author (login), createdAt
 Return ONLY a raw JSON object with shape: {"prs": [...], "issues": [...]}. No markdown, no explanation.`;
         const config2 = readJSON(CONFIG_FILE, {});
         const githubModel =
@@ -501,12 +504,13 @@ Return ONLY a raw JSON object with shape: {"prs": [...], "issues": [...]}. No ma
           const parsed = JSON.parse(clean);
           const cacheDir = ensureCache(project.name);
           const existing = readJSON(path.join(cacheDir, "github.json"), {});
+          const data = { ...parsed, ...(repoUrl ? { repoUrl } : {}) };
           writeJSON(path.join(cacheDir, "github.json"), {
             ...existing,
-            ...parsed,
+            ...data,
             githubFetchedAt: new Date().toISOString(),
           });
-          return send(res, 200, { ok: true, data: parsed });
+          return send(res, 200, { ok: true, data });
         } catch {
           return send(res, 500, {
             ok: false,
