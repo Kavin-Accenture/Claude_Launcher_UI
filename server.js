@@ -10,6 +10,12 @@ const CONFIG_FILE = path.join(BASE, "config.json");
 const USAGE_FILE = path.join(BASE, "usage.json");
 const CACHE_DIR = path.join(BASE, "cache");
 const SKILLS_DIR = path.join(BASE, "skills");
+const COMMANDS_FILE = path.join(BASE, "commands.json");
+
+const COMMANDS = (() => {
+  try { return JSON.parse(fs.readFileSync(COMMANDS_FILE, "utf8")); }
+  catch { return {}; }
+})();
 
 function log(msg) {
   console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
@@ -65,7 +71,7 @@ function readSkills() {
 
 function getMCPStatus() {
   try {
-    const out = execSync("claude mcp list", {
+    const out = execSync(COMMANDS.claudeMcpList, {
       timeout: 15000,
       stdio: ["pipe", "pipe", "ignore"],
     }).toString();
@@ -93,7 +99,7 @@ function getProjectByID(id) {
 
 function runGit(cwd, args) {
   return new Promise((resolve, reject) => {
-    exec(`git ${args.join(" ")}`, { cwd }, (err, stdout, stderr) => {
+    exec(`${COMMANDS.git} ${args.join(" ")}`, { cwd }, (err, stdout, stderr) => {
       if (err) reject(stderr || err.message);
       else resolve(stdout.trim());
     });
@@ -106,7 +112,7 @@ function spawnClaude(args, cwd) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const fullArgs = [...args, "--output-format", "json"];
-    const child = spawn("claude", fullArgs, { cwd, env: { ...process.env } });
+    const child = spawn(COMMANDS.claude, fullArgs, { cwd, env: { ...process.env } });
     let stdout = "",
       stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
@@ -248,7 +254,7 @@ const server = http.createServer(async (req, res) => {
         const name = b.cloneUrl.split("/").pop().replace(".git", "");
         await new Promise((resolve, reject) => {
           exec(
-            `git clone ${b.cloneUrl}`,
+            `${COMMANDS.gitClone} ${b.cloneUrl}`,
             { cwd: cloneDir },
             (err, stdout, stderr) => {
               if (err) reject(stderr);

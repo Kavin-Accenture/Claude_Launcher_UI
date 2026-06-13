@@ -4,16 +4,7 @@
     "defaultCloneLocation": "",
     "reparseModel": "claude-haiku-4-5-20251001"
   },
-  "mcpServers": [
-    {
-      "name": "claude.ai Figma",
-      "status": "disconnected"
-    },
-    {
-      "name": "github",
-      "status": "connected"
-    }
-  ],
+  "mcpServers": [],
   "commonSkills": [],
   "projects": [
     {

@@ -20,6 +20,7 @@ claude-launcher/
 ├── index.html         ← single-page app, all four views
 ├── CLAUDE.md          ← this file
 ├── config.json        ← projects, skill assignments, settings, MCP server list
+├── commands.json      ← all CLI commands used by the server (edit here, never hardcode)
 ├── usage.json         ← append-only interaction log (array of run entries)
 ├── cache/             ← per-project cached data (auto-created)
 │   └── <project-name>/
@@ -178,6 +179,28 @@ Key functions:
 2. The skill appears automatically in the "Add skill" modal for any project
 3. To make it a common skill (shown on dashboard cards), add the skill ID to `commonSkills` in config.json
 4. No other files need editing — server reads skills/ dynamically on every request
+
+## commands.json — CLI command registry
+
+**All terminal commands used by the server must be defined here. Never hardcode a command string in server.js.**
+
+```json
+{
+  "claude": "claude",
+  "claudeMcpList": "claude mcp list",
+  "git": "git",
+  "gitClone": "git clone"
+}
+```
+
+- `claude` — executable used in `spawnClaude()` for all AI runs (`-p`, reparse, github-refresh)
+- `claudeMcpList` — full command used in `getMCPStatus()` to list MCP servers
+- `git` — executable used in `runGit()` for branch operations (checkout, branch -a, etc.)
+- `gitClone` — full command used when cloning a repo via the Add Project modal
+
+`commands.json` is loaded once at server startup into the `COMMANDS` constant. If a command needs to change (e.g. full path to executable, different binary name on a platform), edit only this file — changes take effect on next server restart.
+
+**When adding a new terminal command:** add a key here first, then reference `COMMANDS.<key>` in server.js.
 
 ## Adding a new API route — what to update
 
